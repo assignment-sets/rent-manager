@@ -5,6 +5,8 @@ import { connectDB } from "../lib/db.js";
 import authRoutes from "./routes/auth.route.js";
 import userRoutes from "./routes/user.route.js";
 import tenantRoutes from "./routes/tenant.route.js";
+import rentableUnitRoutes from "./routes/rentableUnit.route.js";
+import dashboardRoutes from "./routes/dashboard.route.js";
 
 dotenv.config();
 
@@ -19,6 +21,8 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/tenants", tenantRoutes);
+app.use("/api/rentable-units", rentableUnitRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

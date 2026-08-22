@@ -48,7 +48,6 @@ export const requireRoles = (...allowedRoles) => {
  */
 export const requireAdmin = requireRoles('ADMIN');
 export const requireTenant = requireRoles('TENANT');
-export const requireAnyRole = requireRoles('ADMIN', 'TENANT');
 
 /**
  * Programmatic helper function for services & controllers

@@ -21,19 +21,20 @@ export const handleLogin = async (req, res) => {
 };
 
 /**
- * Register controller - only accessible by ADMIN
+ * Onboard tenant controller - only accessible by ADMIN
  */
-export const handleRegister = async (req, res) => {
+export const handleOnboardTenant = async (req, res) => {
   try {
-    const newUser = await authService.registerUser(req.body);
+    const result = await authService.onboardTenant(req.body);
     return res.status(201).json({
       success: true,
-      message: 'User registered successfully by Admin',
+      message: 'Tenant onboarding initiated successfully by Admin',
       data: {
-        id: newUser._id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
+        id: result.user._id,
+        email: result.user.email,
+        name: result.user.name,
+        role: result.user.role,
+        assignedUnit: result.assignedUnit,
       },
     });
   } catch (error) {

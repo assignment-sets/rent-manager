@@ -2,9 +2,9 @@ import * as tenantService from "../services/tenant.service.js";
 import { hasRole } from "../middleware/auth.middleware.js";
 
 /**
- * Create a new tenant profile (Tenant onboarding)
+ * Onboard a new tenant profile (Tenant onboarding)
  */
-export const handleCreateTenant = async (req, res) => {
+export const handleOnboardTenant = async (req, res) => {
   try {
     // If Admin provides a target userId, use it; otherwise link to logged-in user
     const targetUserId =
@@ -12,14 +12,14 @@ export const handleCreateTenant = async (req, res) => {
         ? req.body.userId
         : req.user.id;
 
-    const tenant = await tenantService.createTenantProfile(
+    const tenant = await tenantService.onboardTenantProfile(
       targetUserId,
       req.body,
     );
 
     return res.status(201).json({
       success: true,
-      message: "Tenant profile created successfully",
+      message: "Tenant profile onboarded successfully",
       data: tenant,
     });
   } catch (error) {

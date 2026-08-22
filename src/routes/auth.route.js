@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   handleLogin,
-  handleRegister,
+  handleOnboardTenant,
   handleGetMe,
   handleBootstrapAdmin,
 } from '../controllers/auth.controller.js';
@@ -17,6 +17,6 @@ router.post('/bootstrap-admin', handleBootstrapAdmin);
 router.get('/me', authenticateToken, handleGetMe);
 
 // Protected Admin-only routes (Requires valid JWT bearer token AND ADMIN role)
-router.post('/register', authenticateToken, requireAdmin, handleRegister);
+router.post('/onboard-tenant', authenticateToken, requireAdmin, handleOnboardTenant);
 
 export default router;

@@ -1,11 +1,12 @@
 import mongoose from "mongoose";
+import { OCCUPATION_VALUES } from "../schemas/tenant.schema.js";
 
 // Sub-schema for Emergency Contact
 const emergencyContactSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    relation: { type: String, required: true, trim: true },
-    phone: { type: String, required: true, trim: true },
+    name: { type: String, default: "", trim: true },
+    relation: { type: String, default: "", trim: true },
+    phone: { type: String, default: "", trim: true },
   },
   { _id: false },
 );
@@ -29,6 +30,7 @@ const tenantSchema = new mongoose.Schema(
     },
     aadharNumber: {
       type: String,
+      required: [true, "Aadhar number is required"],
       trim: true,
       default: "",
     },
@@ -39,8 +41,10 @@ const tenantSchema = new mongoose.Schema(
     },
     occupation: {
       type: String,
+      enum: OCCUPATION_VALUES,
+      required: [true, "Occupation is required"],
       trim: true,
-      default: "",
+      default: "Other",
     },
 
     // Occupancy Details
@@ -58,11 +62,15 @@ const tenantSchema = new mongoose.Schema(
     // Lease & Financial Information
     moveInDate: {
       type: Date,
-      required: true,
+      default: Date.now,
     },
     leaseEnd: {
       type: Date,
-      required: true,
+      default: () => {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 11);
+        return d;
+      },
     },
     rentStatus: {
       type: String,
@@ -88,7 +96,7 @@ const tenantSchema = new mongoose.Schema(
     // Emergency Contact Subdocument
     emergencyContact: {
       type: emergencyContactSchema,
-      required: true,
+      default: () => ({ name: "", relation: "", phone: "" }),
     },
   },
   {

@@ -5,9 +5,27 @@ import { RentableUnit } from "../models/rentableUnit.model.js";
 import { hasRole } from "../middleware/auth.middleware.js";
 
 /**
- * Create a new Tenant profile for a registered user (Tenant onboarding)
+ * Helper to compute ordinal suffix for day of month (e.g. 1st, 2nd, 15th)
  */
-export const createTenantProfile = async (userId, tenantData) => {
+const getOrdinalDay = (day) => {
+  if (day > 3 && day < 21) return `${day}th`;
+  switch (day % 10) {
+    case 1:
+      return `${day}st`;
+    case 2:
+      return `${day}nd`;
+    case 3:
+      return `${day}rd`;
+    default:
+      return `${day}th`;
+  }
+};
+
+/**
+ * Onboard a new Tenant profile for a registered user (Tenant onboarding)
+ * Performs state machine activation: RentableUnit pending -> occupied
+ */
+export const onboardTenantProfile = async (userId, tenantData) => {
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     const error = new Error("Invalid user ID format.");
     error.statusCode = 400;
@@ -31,14 +49,15 @@ export const createTenantProfile = async (userId, tenantData) => {
   }
 
   const {
-    whatsappPhone,
     aadharNumber,
     permanentAddress,
     occupation,
     occupancyType,
     occupantsCount,
-    moveInDate,
-    leaseEnd,
+    phone,
+    whatsappPhone,
+    moveInDate: inputMoveInDate,
+    leaseEnd: inputLeaseEnd,
     rentStatus,
     rentDueDate,
     isAgreementVerified,
@@ -46,54 +65,103 @@ export const createTenantProfile = async (userId, tenantData) => {
     emergencyContact,
   } = tenantData;
 
-  if (!permanentAddress) {
-    const error = new Error("Permanent address is required.");
+  // Strict Essential Validations for Onboarding
+  const effectivePhone = (phone || user.phone || "").trim();
+  if (!effectivePhone) {
+    const error = new Error("Phone number is required for tenant onboarding.");
     error.statusCode = 400;
     throw error;
   }
 
-  if (!moveInDate || !leaseEnd) {
-    const error = new Error("Move-in date and lease end date are required.");
+  if (!aadharNumber || !aadharNumber.trim()) {
+    const error = new Error("Aadhar number is required for tenant onboarding.");
     error.statusCode = 400;
     throw error;
   }
 
-  if (
-    !emergencyContact ||
-    !emergencyContact.name ||
-    !emergencyContact.relation ||
-    !emergencyContact.phone
-  ) {
+  if (!permanentAddress || !permanentAddress.trim()) {
     const error = new Error(
-      "Emergency contact details (name, relation, phone) are required.",
+      "Permanent address is required for tenant onboarding.",
     );
     error.statusCode = 400;
     throw error;
   }
 
+  if (!occupation || !occupation.trim()) {
+    const error = new Error("Occupation is required for tenant onboarding.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Update and sync user phone if provided or updated
+  if (user.phone !== effectivePhone) {
+    user.phone = effectivePhone;
+    await user.save();
+  }
+
+  // Smart Defaults Calculation
+  const moveIn = inputMoveInDate ? new Date(inputMoveInDate) : new Date();
+
+  let leaseEnd = null;
+  if (inputLeaseEnd) {
+    leaseEnd = new Date(inputLeaseEnd);
+  } else {
+    leaseEnd = new Date(moveIn);
+    leaseEnd.setMonth(leaseEnd.getMonth() + 11); // Standard 11-month tenure
+  }
+
+  const defaultRentDueDate = `${getOrdinalDay(moveIn.getDate())} of every month`;
+
   const tenant = new Tenant({
     userId,
-    whatsappPhone: whatsappPhone || "",
-    aadharNumber: aadharNumber || "",
-    permanentAddress,
-    occupation: occupation || "",
+    aadharNumber: aadharNumber.trim(),
+    permanentAddress: permanentAddress.trim(),
+    occupation: occupation.trim(),
     occupancyType: occupancyType || "Solo / Bachelor",
-    occupantsCount: occupantsCount || 1,
-    moveInDate: new Date(moveInDate),
-    leaseEnd: new Date(leaseEnd),
+    occupantsCount: Number(occupantsCount) || 1,
+    whatsappPhone: (whatsappPhone || user.phone || "").trim(),
+    moveInDate: moveIn,
+    leaseEnd,
     rentStatus: rentStatus || "Pending",
-    rentDueDate: rentDueDate || "5th of every month",
+    rentDueDate: rentDueDate || defaultRentDueDate,
     isAgreementVerified: isAgreementVerified || false,
     documentsVaultUrl: documentsVaultUrl || "",
-    emergencyContact: {
-      name: emergencyContact.name.trim(),
-      relation: emergencyContact.relation.trim(),
-      phone: emergencyContact.phone.trim(),
-    },
+    emergencyContact: emergencyContact
+      ? {
+          name: (emergencyContact.name || "").trim(),
+          relation: (emergencyContact.relation || "").trim(),
+          phone: (emergencyContact.phone || "").trim(),
+        }
+      : { name: "", relation: "", phone: "" },
   });
 
   await tenant.save();
-  return tenant.populate("userId", "name email phone role");
+  await tenant.populate("userId", "name email phone role");
+
+  let connectedUnit = null;
+
+  // STATE MACHINE: Activate reserved unit from 'pending' -> 'occupied'
+  if (user.assignedUnitId) {
+    const unit = await RentableUnit.findById(user.assignedUnitId);
+    if (unit) {
+      unit.tenantId = tenant._id;
+      unit.status = "occupied";
+      await unit.save();
+      connectedUnit = {
+        id: unit._id,
+        unitCode: unit.unitCode,
+        name: unit.name,
+        type: unit.type,
+        rent: unit.rent,
+        status: unit.status,
+      };
+    }
+  }
+
+  return {
+    ...tenant.toJSON(),
+    assignedUnit: connectedUnit,
+  };
 };
 
 /**
@@ -104,7 +172,25 @@ export const getAllTenants = async () => {
     .populate("userId", "name email phone role")
     .sort({ createdAt: -1 });
 
-  return tenants;
+  const tenantIds = tenants.map((t) => t._id);
+  const units = await RentableUnit.find({ tenantId: { $in: tenantIds } });
+
+  const unitMap = new Map();
+  units.forEach((u) => {
+    unitMap.set(u.tenantId.toString(), {
+      id: u._id,
+      unitCode: u.unitCode,
+      name: u.name,
+      type: u.type,
+      rent: u.rent,
+      status: u.status,
+    });
+  });
+
+  return tenants.map((t) => ({
+    ...t.toJSON(),
+    assignedUnit: unitMap.get(t._id.toString()) || null,
+  }));
 };
 
 /**
@@ -128,7 +214,21 @@ export const getTenantByUserId = async (userId) => {
     throw error;
   }
 
-  return tenant;
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+
+  return {
+    ...tenant.toJSON(),
+    assignedUnit: unit
+      ? {
+          id: unit._id,
+          unitCode: unit.unitCode,
+          name: unit.name,
+          type: unit.type,
+          rent: unit.rent,
+          status: unit.status,
+        }
+      : null,
+  };
 };
 
 /**
@@ -152,7 +252,21 @@ export const getTenantById = async (tenantId) => {
     throw error;
   }
 
-  return tenant;
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+
+  return {
+    ...tenant.toJSON(),
+    assignedUnit: unit
+      ? {
+          id: unit._id,
+          unitCode: unit.unitCode,
+          name: unit.name,
+          type: unit.type,
+          rent: unit.rent,
+          status: unit.status,
+        }
+      : null,
+  };
 };
 
 /**
@@ -222,7 +336,23 @@ export const updateTenant = async (tenantId, updateData, requestingUser) => {
   }
 
   await tenant.save();
-  return tenant.populate("userId", "name email phone role");
+  await tenant.populate("userId", "name email phone role");
+
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+
+  return {
+    ...tenant.toJSON(),
+    assignedUnit: unit
+      ? {
+          id: unit._id,
+          unitCode: unit.unitCode,
+          name: unit.name,
+          type: unit.type,
+          rent: unit.rent,
+          status: unit.status,
+        }
+      : null,
+  };
 };
 
 /**

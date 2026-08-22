@@ -31,6 +31,16 @@ const userSchema = new mongoose.Schema(
       default: "",
       index: true,
     },
+    assignedUnitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RentableUnit",
+      default: null,
+    },
+    assignedUnitCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   { timestamps: true },
 );

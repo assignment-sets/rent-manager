@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { User } from "../models/user.model.js";
+import { RentableUnit } from "../models/rentableUnit.model.js";
 
 const getJwtSecret = () => process.env.JWT_SECRET;
 const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || "24h";
@@ -22,10 +23,10 @@ export const generateToken = (user) => {
 };
 
 /**
- * Register a new user (admin or tenant) - invoked by Admin
+ * Onboard a tenant (Admin action) - requires unitCode to reserve a vacant unit
  */
-export const registerUser = async (userData) => {
-  const { name, email, password, role, phone } = userData;
+export const onboardTenant = async (userData) => {
+  const { name, email, password, role, phone, unitCode } = userData;
 
   const existingUser = await User.findOne({ email });
   if (existingUser) {
@@ -34,16 +35,74 @@ export const registerUser = async (userData) => {
     throw error;
   }
 
+  // If registering an Admin, unitCode is not required
+  if (role === "ADMIN") {
+    const adminUser = new User({
+      name,
+      email,
+      password,
+      role: "ADMIN",
+      phone: phone || "",
+    });
+    await adminUser.save();
+    return { user: adminUser, assignedUnit: null };
+  }
+
+  // Tenant onboarding: unitCode is required
+  if (!unitCode) {
+    const error = new Error(
+      "unitCode is required to onboard a tenant. Please specify which rentable unit to assign.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const unit = await RentableUnit.findOne({
+    unitCode: unitCode.trim().toUpperCase(),
+  });
+
+  if (!unit) {
+    const error = new Error(
+      `Rentable unit with code '${unitCode}' was not found.`,
+    );
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (unit.status !== "vacant") {
+    const error = new Error(
+      `Rentable unit '${unit.unitCode}' is not vacant. Current status: ${unit.status}.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Transition RentableUnit state: vacant -> pending (reserved)
+  unit.status = "pending";
+  await unit.save();
+
   const user = new User({
     name,
     email,
     password,
-    role: role || "TENANT",
+    role: "TENANT",
     phone: phone || "",
+    assignedUnitId: unit._id,
+    assignedUnitCode: unit.unitCode,
   });
 
   await user.save();
-  return user;
+
+  return {
+    user,
+    assignedUnit: {
+      id: unit._id,
+      unitCode: unit.unitCode,
+      name: unit.name,
+      status: unit.status,
+      rent: unit.rent,
+    },
+  };
 };
 
 /**

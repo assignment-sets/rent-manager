@@ -164,3 +164,51 @@ export const handleDeleteTenant = async (req, res) => {
     });
   }
 };
+
+/**
+ * Submit Phase 2 Agreement Documents (Tenant Action)
+ */
+export const handleSubmitAgreementDocs = async (req, res) => {
+  try {
+    const updatedTenant = await tenantService.submitAgreementDocs(req.user.id, {
+      files: req.files,
+      body: req.body,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Agreement documents uploaded and submitted successfully",
+      data: updatedTenant,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Update Agreement Verification Status (Admin only)
+ */
+export const handleUpdateAgreementStatus = async (req, res) => {
+  try {
+    const updatedTenant = await tenantService.updateAgreementStatus(
+      req.params.id,
+      req.body,
+      req.file,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Agreement verification status updated successfully",
+      data: updatedTenant,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+

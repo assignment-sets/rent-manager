@@ -165,3 +165,66 @@ export const tenantOnboardSchema = z
       });
     }
   });
+
+/**
+ * Phase 2 Mandatory Emergency Contact Schema
+ */
+export const mandatoryEmergencyContactSchema = z.object({
+  name: z.string().trim().min(2, "Emergency contact name is required (min 2 characters)"),
+  relation: emergencyRelationEnum,
+  phone: indianPhoneSchema,
+});
+
+/**
+ * Phase 2 Form Text Fields Schema (Parsed alongside multipart files)
+ */
+export const submitAgreementDocsSchema = z.object({
+  emergencyContactName: z
+    .string()
+    .trim()
+    .min(2, "Emergency contact name is required"),
+  emergencyContactRelation: emergencyRelationEnum,
+  emergencyContactPhone: indianPhoneSchema,
+  whatsappPhone: indianPhoneSchema.optional(),
+  permanentAddress: z
+    .string()
+    .trim()
+    .min(5, "Permanent address must be at least 5 characters long")
+    .optional(),
+});
+
+/**
+ * Agreement Status Enum Values
+ */
+export const AGREEMENT_STATUS_VALUES = [
+  "NOT_SUBMITTED",
+  "SUBMITTED",
+  "VERIFIED",
+  "REJECTED",
+  "FAILED",
+];
+
+export const agreementStatusEnum = z.enum(AGREEMENT_STATUS_VALUES, {
+  message: `Invalid agreement status. Allowed values: ${AGREEMENT_STATUS_VALUES.join(", ")}`,
+});
+
+/**
+ * Admin Agreement Status Update Schema
+ */
+export const updateAgreementStatusSchema = z.object({
+  agreementStatus: agreementStatusEnum.optional(),
+  isAgreementVerified: z
+    .union([z.boolean(), z.string().transform((v) => v === "true")])
+    .optional(),
+  agreementPdfUrl: z.string().trim().optional(),
+  rejectionReason: z.string().trim().optional(),
+  deleteAgreementPdf: z
+    .union([z.boolean(), z.string().transform((v) => v === "true")])
+    .optional(),
+  clearAgreementPdf: z
+    .union([z.boolean(), z.string().transform((v) => v === "true")])
+    .optional(),
+});
+
+
+

@@ -11,6 +11,58 @@ const emergencyContactSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Sub-schema for individual document items
+const documentItemSchema = new mongoose.Schema(
+  {
+    url: { type: String, default: "", trim: true },
+    key: { type: String, default: "", trim: true }, // S3 object key
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+// Sub-schema for optional additional documents (e.g. PAN card, company ID)
+const additionalDocSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    url: { type: String, required: true, trim: true },
+    key: { type: String, default: "", trim: true },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+// Sub-schema for all Tenant documents
+const tenantDocumentsSchema = new mongoose.Schema(
+  {
+    aadharCard: {
+      type: documentItemSchema,
+      default: () => ({ url: "", key: "" }),
+    },
+    passportPhoto: {
+      type: documentItemSchema,
+      default: () => ({ url: "", key: "" }),
+    },
+    agreementPdf: {
+      type: documentItemSchema,
+      default: () => ({ url: "", key: "" }),
+    },
+    additionalDocs: {
+      type: [additionalDocSchema],
+      default: [],
+    },
+  },
+  { _id: false },
+);
+
+export const AGREEMENT_STATUSES = [
+  "NOT_SUBMITTED", // Default upon initial onboarding (Phase 1)
+  "SUBMITTED",     // Phase 2 completed; documents under review
+  "VERIFIED",      // Admin signed off and attached Agreement PDF
+  "REJECTED",      // Admin rejected submission with rejectionReason
+  "FAILED",        // System/Storage failure during processing
+];
+
 const tenantSchema = new mongoose.Schema(
   {
     // Link to core User auth account (1-to-1 relationship)
@@ -82,15 +134,25 @@ const tenantSchema = new mongoose.Schema(
       default: "5th of every month",
     },
 
-    // Verification & Documentation
+    // Verification & Documentation Lifecycle
+    agreementStatus: {
+      type: String,
+      enum: AGREEMENT_STATUSES,
+      default: "NOT_SUBMITTED",
+      index: true,
+    },
+    rejectionReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     isAgreementVerified: {
       type: Boolean,
       default: false,
     },
-    documentsVaultUrl: {
-      type: String,
-      trim: true,
-      default: "",
+    documents: {
+      type: tenantDocumentsSchema,
+      default: () => ({}),
     },
 
     // Emergency Contact Subdocument

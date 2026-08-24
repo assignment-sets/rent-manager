@@ -1,8 +1,15 @@
+import path from "path";
 import mongoose from "mongoose";
 import { Tenant } from "../models/tenant.model.js";
 import { User } from "../models/user.model.js";
 import { RentableUnit } from "../models/rentableUnit.model.js";
 import { hasRole } from "../middleware/auth.middleware.js";
+import {
+  uploadBufferToS3,
+  deleteObjectsFromS3,
+  deleteAllVersionsOfObject,
+  deletePrefixAllVersions,
+} from "./storage.service.js";
 
 /**
  * Helper to compute ordinal suffix for day of month (e.g. 1st, 2nd, 15th)
@@ -61,7 +68,6 @@ export const onboardTenantProfile = async (userId, tenantData) => {
     rentStatus,
     rentDueDate,
     isAgreementVerified,
-    documentsVaultUrl,
     emergencyContact,
   } = tenantData;
 
@@ -125,7 +131,7 @@ export const onboardTenantProfile = async (userId, tenantData) => {
     rentStatus: rentStatus || "Pending",
     rentDueDate: rentDueDate || defaultRentDueDate,
     isAgreementVerified: isAgreementVerified || false,
-    documentsVaultUrl: documentsVaultUrl || "",
+    documents: {},
     emergencyContact: emergencyContact
       ? {
           name: (emergencyContact.name || "").trim(),
@@ -309,7 +315,6 @@ export const updateTenant = async (tenantId, updateData, requestingUser) => {
     "leaseEnd",
     "rentStatus",
     "rentDueDate",
-    "documentsVaultUrl",
   ];
 
   for (const field of allowedFields) {
@@ -356,7 +361,260 @@ export const updateTenant = async (tenantId, updateData, requestingUser) => {
 };
 
 /**
- * Delete a tenant profile and vacate any occupied unit (Admin only)
+ * Submit Phase 2 Agreement Documents (Tenant Action)
+ * Uploads Aadhar Card and Passport Photo to AWS S3 in parallel,
+ * updates Tenant documents & emergency contact atomically with compensating S3 rollback on DB error.
+ */
+export const submitAgreementDocs = async (userId, { files, body }) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const error = new Error("Invalid user ID format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenant = await Tenant.findOne({ userId });
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const aadharFile = files?.aadharCard?.[0];
+  const photoFile = files?.passportPhoto?.[0];
+
+  if (!aadharFile) {
+    const error = new Error("Aadhar Card file ('aadharCard') is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!photoFile) {
+    const error = new Error("Passport Photo file ('passportPhoto') is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const timestamp = Date.now();
+  const aadharExt = path.extname(aadharFile.originalname) || ".pdf";
+  const photoExt = path.extname(photoFile.originalname) || ".jpg";
+
+  const aadharKey = `tenants/${userId}/aadharCard_${timestamp}${aadharExt}`;
+  const photoKey = `tenants/${userId}/passportPhoto_${timestamp}${photoExt}`;
+
+  // 1. Parallel Upload to AWS S3
+  const [aadharResult, photoResult] = await Promise.all([
+    uploadBufferToS3({
+      buffer: aadharFile.buffer,
+      key: aadharKey,
+      contentType: aadharFile.mimetype || "application/pdf",
+    }),
+    uploadBufferToS3({
+      buffer: photoFile.buffer,
+      key: photoKey,
+      contentType: photoFile.mimetype || "image/jpeg",
+    }),
+  ]);
+
+  // 2. Atomic Database Update (with compensating S3 rollback on failure)
+  try {
+    tenant.documents.aadharCard = {
+      url: aadharResult.url,
+      key: aadharResult.key,
+      uploadedAt: new Date(),
+    };
+
+    tenant.documents.passportPhoto = {
+      url: photoResult.url,
+      key: photoResult.key,
+      uploadedAt: new Date(),
+    };
+
+    if (body.emergencyContactName) {
+      tenant.emergencyContact = {
+        name: body.emergencyContactName.trim(),
+        relation: body.emergencyContactRelation?.trim() || "Guardian",
+        phone: body.emergencyContactPhone?.trim() || "",
+      };
+    }
+
+    if (body.whatsappPhone) {
+      tenant.whatsappPhone = body.whatsappPhone.trim();
+    }
+
+    if (body.permanentAddress) {
+      tenant.permanentAddress = body.permanentAddress.trim();
+    }
+
+    // Advance state machine: transition to SUBMITTED and clear any previous rejection
+    tenant.agreementStatus = "SUBMITTED";
+    tenant.rejectionReason = "";
+    tenant.isAgreementVerified = false;
+
+    await tenant.save();
+    await tenant.populate("userId", "name email phone role");
+
+    const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+
+    return {
+      ...tenant.toJSON(),
+      assignedUnit: unit
+        ? {
+            id: unit._id,
+            unitCode: unit.unitCode,
+            name: unit.name,
+            type: unit.type,
+            rent: unit.rent,
+            status: unit.status,
+          }
+        : null,
+    };
+  } catch (dbError) {
+    // COMPENSATING ROLLBACK: Delete newly uploaded S3 files to prevent orphaned garbage
+    await deleteObjectsFromS3([aadharResult.key, photoResult.key]);
+    throw dbError;
+  }
+};
+
+/**
+ * Update Agreement Verification Status & PDF URL (Admin Action)
+ */
+/**
+ * Update Agreement Verification Status, PDF Upload & Deletion Lifecycle (Admin Action)
+ * Supports:
+ * - Direct PDF file upload (streams to deterministic S3 key: agreements/{tenantId}/signed_agreement.pdf)
+ * - S3 Versioning (multiple uploads automatically create versions under the same URL)
+ * - Complete Multi-Version S3 Purge on deletion (deleteAgreementPdf: true)
+ * - Full State Machine control (VERIFIED, REJECTED, SUBMITTED, NOT_SUBMITTED, FAILED)
+ */
+export const updateAgreementStatus = async (
+  tenantId,
+  {
+    agreementStatus,
+    isAgreementVerified,
+    agreementPdfUrl,
+    rejectionReason,
+    deleteAgreementPdf,
+    clearAgreementPdf,
+  } = {},
+  file = null,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(tenantId)) {
+    const error = new Error("Invalid tenant ID format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isDeletingAgreement =
+    deleteAgreementPdf === true ||
+    deleteAgreementPdf === "true" ||
+    clearAgreementPdf === true ||
+    clearAgreementPdf === "true";
+
+  // 1. Handle Deletion / Purging of Agreement PDF (Purges ALL S3 versions & delete markers)
+  if (isDeletingAgreement) {
+    const deterministicKey = `agreements/${tenant._id}/signed_agreement.pdf`;
+    await deleteAllVersionsOfObject(deterministicKey);
+
+    if (tenant.documents?.agreementPdf?.key && tenant.documents.agreementPdf.key !== deterministicKey) {
+      await deleteAllVersionsOfObject(tenant.documents.agreementPdf.key);
+    }
+
+    tenant.documents.agreementPdf = {
+      url: "",
+      key: "",
+      uploadedAt: null,
+    };
+  }
+
+  // 2. Handle Direct PDF File Upload (Streams to deterministic S3 key)
+  if (file) {
+    const deterministicKey = `agreements/${tenant._id}/signed_agreement.pdf`;
+
+    const uploadResult = await uploadBufferToS3({
+      buffer: file.buffer,
+      key: deterministicKey,
+      contentType: file.mimetype || "application/pdf",
+      cacheControl: "no-cache, no-store, must-revalidate",
+    });
+
+    tenant.documents.agreementPdf = {
+      url: uploadResult.url,
+      key: uploadResult.key,
+      uploadedAt: new Date(),
+    };
+  } else if (agreementPdfUrl && !isDeletingAgreement) {
+    tenant.documents.agreementPdf = {
+      url: agreementPdfUrl.trim(),
+      key: "",
+      uploadedAt: new Date(),
+    };
+  }
+
+  // 3. Resolve Target Agreement Status
+  let targetStatus;
+  if (agreementStatus) {
+    targetStatus = agreementStatus;
+  } else if (file) {
+    targetStatus = "VERIFIED";
+  } else if (isDeletingAgreement) {
+    targetStatus = "NOT_SUBMITTED";
+  } else if (isAgreementVerified === true) {
+    targetStatus = "VERIFIED";
+  } else if (isAgreementVerified === false) {
+    targetStatus = "NOT_SUBMITTED";
+  } else {
+    targetStatus = tenant.agreementStatus;
+  }
+
+  tenant.agreementStatus = targetStatus;
+
+  // 4. Synchronize State Side-Effects
+  if (targetStatus === "VERIFIED") {
+    tenant.isAgreementVerified = true;
+    tenant.rejectionReason = "";
+  } else if (targetStatus === "REJECTED") {
+    tenant.isAgreementVerified = false;
+    tenant.rejectionReason =
+      rejectionReason?.trim() ||
+      "Agreement documents rejected by admin. Please resubmit clear copies.";
+  } else if (targetStatus === "FAILED") {
+    tenant.isAgreementVerified = false;
+    tenant.rejectionReason =
+      rejectionReason?.trim() ||
+      "Document processing failed. Please retry submission.";
+  } else {
+    tenant.isAgreementVerified = false;
+  }
+
+  await tenant.save();
+  await tenant.populate("userId", "name email phone role");
+
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+
+  return {
+    ...tenant.toJSON(),
+    assignedUnit: unit
+      ? {
+          id: unit._id,
+          unitCode: unit.unitCode,
+          name: unit.name,
+          type: unit.type,
+          rent: unit.rent,
+          status: unit.status,
+        }
+      : null,
+  };
+};
+
+/**
+ * Delete a tenant profile, vacate any occupied unit, and purge all S3 documents (Admin only)
  */
 export const deleteTenantById = async (tenantId) => {
   if (!mongoose.Types.ObjectId.isValid(tenantId)) {
@@ -372,12 +630,19 @@ export const deleteTenantById = async (tenantId) => {
     throw error;
   }
 
-  // Automatically release any occupied RentableUnit
+  // 1. Purge all S3 objects and versions associated with this tenant
+  if (tenant.userId) {
+    await deletePrefixAllVersions(`tenants/${tenant.userId}/`);
+  }
+  await deletePrefixAllVersions(`agreements/${tenant._id}/`);
+
+  // 2. Automatically release any occupied RentableUnit
   await RentableUnit.updateMany(
     { tenantId: tenant._id },
     { $set: { tenantId: null, status: "vacant" } },
   );
 
+  // 3. Delete tenant database document
   await Tenant.findByIdAndDelete(tenantId);
 
   return {
@@ -385,3 +650,4 @@ export const deleteTenantById = async (tenantId) => {
     userId: tenant.userId,
   };
 };
+

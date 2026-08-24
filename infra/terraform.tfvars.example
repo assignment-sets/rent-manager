@@ -1,0 +1,7 @@
+# Example Terraform Variables File
+# Copy this file to 'terraform.tfvars' (which is git-ignored) and fill in your actual values.
+
+aws_region           = "ap-south-1"
+bucket_name          = "your-unique-s3-vault-bucket-name"
+environment          = "dev"
+allowed_cors_origins = ["http://localhost:5173", "http://localhost:3000"]

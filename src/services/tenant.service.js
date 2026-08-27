@@ -9,6 +9,8 @@ import {
   deleteObjectsFromS3,
   deleteAllVersionsOfObject,
   deletePrefixAllVersions,
+  hydrateDocumentUrls,
+  generatePresignedDownloadUrl,
 } from "./storage.service.js";
 
 /**
@@ -26,6 +28,20 @@ const getOrdinalDay = (day) => {
     default:
       return `${day}th`;
   }
+};
+
+/**
+ * Helper to format tenant response with hydrated pre-signed document URLs
+ */
+const formatTenantResponse = async (tenant, assignedUnit = null) => {
+  if (!tenant) return null;
+  const json = typeof tenant.toJSON === "function" ? tenant.toJSON() : { ...tenant };
+  const hydratedDocs = await hydrateDocumentUrls(json.documents);
+  return {
+    ...json,
+    documents: hydratedDocs,
+    assignedUnit,
+  };
 };
 
 /**
@@ -164,10 +180,7 @@ export const onboardTenantProfile = async (userId, tenantData) => {
     }
   }
 
-  return {
-    ...tenant.toJSON(),
-    assignedUnit: connectedUnit,
-  };
+  return await formatTenantResponse(tenant, connectedUnit);
 };
 
 /**
@@ -193,10 +206,11 @@ export const getAllTenants = async () => {
     });
   });
 
-  return tenants.map((t) => ({
-    ...t.toJSON(),
-    assignedUnit: unitMap.get(t._id.toString()) || null,
-  }));
+  return await Promise.all(
+    tenants.map((t) =>
+      formatTenantResponse(t, unitMap.get(t._id.toString()) || null),
+    ),
+  );
 };
 
 /**
@@ -222,9 +236,9 @@ export const getTenantByUserId = async (userId) => {
 
   const unit = await RentableUnit.findOne({ tenantId: tenant._id });
 
-  return {
-    ...tenant.toJSON(),
-    assignedUnit: unit
+  return await formatTenantResponse(
+    tenant,
+    unit
       ? {
           id: unit._id,
           unitCode: unit.unitCode,
@@ -234,7 +248,7 @@ export const getTenantByUserId = async (userId) => {
           status: unit.status,
         }
       : null,
-  };
+  );
 };
 
 /**
@@ -260,9 +274,9 @@ export const getTenantById = async (tenantId) => {
 
   const unit = await RentableUnit.findOne({ tenantId: tenant._id });
 
-  return {
-    ...tenant.toJSON(),
-    assignedUnit: unit
+  return await formatTenantResponse(
+    tenant,
+    unit
       ? {
           id: unit._id,
           unitCode: unit.unitCode,
@@ -272,7 +286,7 @@ export const getTenantById = async (tenantId) => {
           status: unit.status,
         }
       : null,
-  };
+  );
 };
 
 /**
@@ -345,9 +359,9 @@ export const updateTenant = async (tenantId, updateData, requestingUser) => {
 
   const unit = await RentableUnit.findOne({ tenantId: tenant._id });
 
-  return {
-    ...tenant.toJSON(),
-    assignedUnit: unit
+  return await formatTenantResponse(
+    tenant,
+    unit
       ? {
           id: unit._id,
           unitCode: unit.unitCode,
@@ -357,7 +371,7 @@ export const updateTenant = async (tenantId, updateData, requestingUser) => {
           status: unit.status,
         }
       : null,
-  };
+  );
 };
 
 /**
@@ -455,9 +469,9 @@ export const submitAgreementDocs = async (userId, { files, body }) => {
 
     const unit = await RentableUnit.findOne({ tenantId: tenant._id });
 
-    return {
-      ...tenant.toJSON(),
-      assignedUnit: unit
+    return await formatTenantResponse(
+      tenant,
+      unit
         ? {
             id: unit._id,
             unitCode: unit.unitCode,
@@ -467,7 +481,7 @@ export const submitAgreementDocs = async (userId, { files, body }) => {
             status: unit.status,
           }
         : null,
-    };
+    );
   } catch (dbError) {
     // COMPENSATING ROLLBACK: Delete newly uploaded S3 files to prevent orphaned garbage
     await deleteObjectsFromS3([aadharResult.key, photoResult.key]);
@@ -475,9 +489,6 @@ export const submitAgreementDocs = async (userId, { files, body }) => {
   }
 };
 
-/**
- * Update Agreement Verification Status & PDF URL (Admin Action)
- */
 /**
  * Update Agreement Verification Status, PDF Upload & Deletion Lifecycle (Admin Action)
  * Supports:
@@ -598,9 +609,9 @@ export const updateAgreementStatus = async (
 
   const unit = await RentableUnit.findOne({ tenantId: tenant._id });
 
-  return {
-    ...tenant.toJSON(),
-    assignedUnit: unit
+  return await formatTenantResponse(
+    tenant,
+    unit
       ? {
           id: unit._id,
           unitCode: unit.unitCode,
@@ -610,7 +621,7 @@ export const updateAgreementStatus = async (
           status: unit.status,
         }
       : null,
-  };
+  );
 };
 
 /**
@@ -650,4 +661,67 @@ export const deleteTenantById = async (tenantId) => {
     userId: tenant.userId,
   };
 };
+
+/**
+ * Generate a fresh Pre-Signed GET URL on-demand for a specific tenant document (Admin or Profile Owner)
+ *
+ * @param {string} tenantId - Tenant document ID
+ * @param {string} docType - Document type: 'aadharCard' | 'passportPhoto' | 'agreementPdf'
+ * @param {Object} requestingUser - Authenticated user context
+ * @param {number} [expiresIn=3600] - Expiration in seconds
+ * @returns {Promise<{ docType: string, url: string, key: string, expiresIn: number }>}
+ */
+export const getPresignedDocumentUrl = async (
+  tenantId,
+  docType,
+  requestingUser,
+  expiresIn = 3600,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(tenantId)) {
+    const error = new Error("Invalid tenant ID format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  // Authorization check: User must be ADMIN or the owner of this tenant profile
+  const isOwner = tenant.userId.toString() === requestingUser.id;
+  const isAdmin = hasRole(requestingUser, "ADMIN");
+
+  if (!isOwner && !isAdmin) {
+    const error = new Error("Access forbidden. You cannot access this document.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  let docKey = tenant.documents?.[docType]?.key;
+  if (!docKey && tenant.documents?.[docType]?.url) {
+    const url = tenant.documents[docType].url;
+    if (url.includes(".amazonaws.com/")) {
+      docKey = url.split(".amazonaws.com/")[1]?.split("?")[0];
+    }
+  }
+
+  if (!docKey) {
+    const error = new Error(`No file found for document type "${docType}".`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const presignedUrl = await generatePresignedDownloadUrl(docKey, expiresIn);
+
+  return {
+    docType,
+    url: presignedUrl,
+    key: docKey,
+    expiresIn,
+  };
+};
+
 

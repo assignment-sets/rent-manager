@@ -1,9 +1,11 @@
 import {
   S3Client,
   PutObjectCommand,
+  GetObjectCommand,
   DeleteObjectsCommand,
   ListObjectVersionsCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -203,4 +205,90 @@ export const deletePrefixAllVersions = async (prefix) => {
     console.error(`[S3 Prefix Purge Warning] Failed to purge objects under prefix "${prefix}":`, error);
   }
 };
+
+/**
+ * Generate a dynamic pre-signed GET URL for secure temporary client-side access to a private S3 object.
+ *
+ * @param {string} key - S3 object key (e.g. "tenants/userId/aadharCard_123.pdf")
+ * @param {number} [expiresIn=3600] - URL validity in seconds (default 1 hour)
+ * @returns {Promise<string>} - The pre-signed authenticated URL
+ */
+export const generatePresignedDownloadUrl = async (key, expiresIn = 3600) => {
+  if (!key) return "";
+
+  try {
+    const { region, bucketName } = getAwsConfig();
+
+    const s3Client = new S3Client({
+      region,
+    });
+
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+
+    return await getSignedUrl(s3Client, command, { expiresIn });
+  } catch (error) {
+    console.error(`[S3 Presign Warning] Failed to presign URL for key "${key}":`, error);
+    return "";
+  }
+};
+
+/**
+ * Hydrate all document subdocuments with fresh, pre-signed GET URLs for frontend consumption.
+ *
+ * @param {Object} documents - The Tenant documents object or Mongoose subdocument
+ * @param {number} [expiresIn=3600] - Pre-signed URL expiration in seconds (default 1 hour)
+ * @returns {Promise<Object>} - Hydrated documents object with working pre-signed URLs
+ */
+export const hydrateDocumentUrls = async (documents, expiresIn = 3600) => {
+  if (!documents) return {};
+
+  const raw =
+    typeof documents.toObject === "function"
+      ? documents.toObject()
+      : { ...documents };
+
+  const hydrateItem = async (item) => {
+    if (!item) return { url: "", key: "", uploadedAt: null };
+
+    let key = item.key;
+    // Fallback: If key is not stored but url is an S3 url, extract key from url
+    if (!key && item.url && item.url.includes(".amazonaws.com/")) {
+      key = item.url.split(".amazonaws.com/")[1];
+    }
+
+    if (key) {
+      const presignedUrl = await generatePresignedDownloadUrl(key, expiresIn);
+      return {
+        ...item,
+        url: presignedUrl || item.url || "",
+        key,
+      };
+    }
+
+    return item;
+  };
+
+  const hydrated = { ...raw };
+
+  if (raw.aadharCard) {
+    hydrated.aadharCard = await hydrateItem(raw.aadharCard);
+  }
+  if (raw.passportPhoto) {
+    hydrated.passportPhoto = await hydrateItem(raw.passportPhoto);
+  }
+  if (raw.agreementPdf) {
+    hydrated.agreementPdf = await hydrateItem(raw.agreementPdf);
+  }
+  if (Array.isArray(raw.additionalDocs)) {
+    hydrated.additionalDocs = await Promise.all(
+      raw.additionalDocs.map(hydrateItem),
+    );
+  }
+
+  return hydrated;
+};
+
 

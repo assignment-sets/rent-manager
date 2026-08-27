@@ -1,6 +1,7 @@
 import { Plot } from "../models/plot.model.js";
 import { Floor } from "../models/floor.model.js";
 import { RentableUnit } from "../models/rentableUnit.model.js";
+import { hydrateDocumentUrls } from "./storage.service.js";
 
 /**
  * Format a Date object into human readable format matching mock (e.g. '10 Jan 2024')
@@ -44,64 +45,68 @@ export const getAggregatedDashboardProperties = async () => {
       .lean(),
   ]);
 
-  // 2. Map Units grouped by floorId
+  // 2. Map Units grouped by floorId (with hydrated pre-signed document URLs)
   const unitsByFloorId = new Map();
-  units.forEach((unit) => {
-    const floorKey = unit.floorId.toString();
-    if (!unitsByFloorId.has(floorKey)) {
-      unitsByFloorId.set(floorKey, []);
-    }
+  await Promise.all(
+    units.map(async (unit) => {
+      const floorKey = unit.floorId.toString();
+      if (!unitsByFloorId.has(floorKey)) {
+        unitsByFloorId.set(floorKey, []);
+      }
 
-    let tenantPayload = null;
-    if (unit.tenantId) {
-      const t = unit.tenantId;
-      const u = t.userId || {};
-      tenantPayload = {
-        id: t._id,
-        userId: u._id || "",
-        name: u.name || "",
-        phone: u.phone || "",
-        whatsappPhone: t.whatsappPhone || "",
-        email: u.email || "",
-        aadhar: t.aadharNumber || "",
-        permanentAddress: t.permanentAddress || "",
-        occupation: t.occupation || "",
-        occupancyType: t.occupancyType || "Solo / Bachelor",
-        occupantsCount: t.occupantsCount || 1,
-        agreementStatus: t.agreementStatus || "NOT_SUBMITTED",
-        rejectionReason: t.rejectionReason || "",
-        isAgreementVerified: t.isAgreementVerified || false,
-        documents: t.documents || {},
-        moveInDate: formatDate(t.moveInDate),
-        daysOccupied: calculateDaysOccupied(t.moveInDate),
-        leaseEnd: formatDate(t.leaseEnd),
-        rentStatus: t.rentStatus || "Pending",
-        rentDueDate: t.rentDueDate || "5th of every month",
-        emergencyContact: t.emergencyContact || {
-          name: "",
-          relation: "",
-          phone: "",
+      let tenantPayload = null;
+      if (unit.tenantId) {
+        const t = unit.tenantId;
+        const u = t.userId || {};
+        const hydratedDocs = await hydrateDocumentUrls(t.documents);
+
+        tenantPayload = {
+          id: t._id,
+          userId: u._id || "",
+          name: u.name || "",
+          phone: u.phone || "",
+          whatsappPhone: t.whatsappPhone || "",
+          email: u.email || "",
+          aadhar: t.aadharNumber || "",
+          permanentAddress: t.permanentAddress || "",
+          occupation: t.occupation || "",
+          occupancyType: t.occupancyType || "Solo / Bachelor",
+          occupantsCount: t.occupantsCount || 1,
+          agreementStatus: t.agreementStatus || "NOT_SUBMITTED",
+          rejectionReason: t.rejectionReason || "",
+          isAgreementVerified: t.isAgreementVerified || false,
+          documents: hydratedDocs,
+          moveInDate: formatDate(t.moveInDate),
+          daysOccupied: calculateDaysOccupied(t.moveInDate),
+          leaseEnd: formatDate(t.leaseEnd),
+          rentStatus: t.rentStatus || "Pending",
+          rentDueDate: t.rentDueDate || "5th of every month",
+          emergencyContact: t.emergencyContact || {
+            name: "",
+            relation: "",
+            phone: "",
+          },
+        };
+      }
+
+      unitsByFloorId.get(floorKey).push({
+        id: unit.unitCode, // UI expects string unit code (e.g. 'A-01', 'B-101')
+        name: unit.name,
+        type: unit.type,
+        rent: unit.rent,
+        status: unit.status,
+        color: unit.color,
+        bio: unit.bio,
+        specs: unit.specs || {},
+        snapshots: unit.snapshots || {
+          coverImage: "",
+          gallery: [],
+          virtualTourUrl: null,
         },
-      };
-    }
-
-    unitsByFloorId.get(floorKey).push({
-      id: unit.unitCode, // UI expects string unit code (e.g. 'A-01', 'B-101')
-      name: unit.name,
-      type: unit.type,
-      rent: unit.rent,
-      status: unit.status,
-      color: unit.color,
-      bio: unit.bio,
-      specs: unit.specs || {},
-      snapshots: unit.snapshots || {
-        coverImage: "",
-        gallery: [],
-        virtualTourUrl: null,
-      },
-      tenant: tenantPayload,
-    });
-  });
+        tenant: tenantPayload,
+      });
+    }),
+  );
 
   // 3. Map Floors grouped by plotId
   const floorsByPlotId = new Map();

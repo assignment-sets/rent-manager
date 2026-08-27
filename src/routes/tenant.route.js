@@ -9,6 +9,7 @@ import {
   handleDeleteTenant,
   handleSubmitAgreementDocs,
   handleUpdateAgreementStatus,
+  handleGetPresignedDocumentUrl,
 } from "../controllers/tenant.controller.js";
 import {
   authenticateToken,
@@ -60,6 +61,9 @@ router.patch(
   validate(updateAgreementStatusSchema),
   handleUpdateAgreementStatus,
 );
+
+// On-Demand Pre-Signed Download URL (Admin or profile owner)
+router.get("/:id/documents/presigned-url", handleGetPresignedDocumentUrl);
 
 // Specific Tenant details (Admin or profile owner)
 router.get("/:id", handleGetTenantById);

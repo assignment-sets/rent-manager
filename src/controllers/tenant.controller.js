@@ -212,3 +212,36 @@ export const handleUpdateAgreementStatus = async (req, res) => {
   }
 };
 
+/**
+ * Get On-Demand Pre-Signed Download URL for a specific document (Admin or Profile Owner)
+ */
+export const handleGetPresignedDocumentUrl = async (req, res) => {
+  try {
+    const { docType } = req.query;
+    if (!docType) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Query parameter 'docType' is required (e.g. 'aadharCard', 'passportPhoto', 'agreementPdf').",
+      });
+    }
+
+    const result = await tenantService.getPresignedDocumentUrl(
+      req.params.id,
+      docType,
+      req.user,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+

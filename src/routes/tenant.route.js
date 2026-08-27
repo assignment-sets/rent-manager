@@ -25,6 +25,8 @@ import {
   submitAgreementDocsSchema,
   updateAgreementStatusSchema,
 } from "../schemas/tenant.schema.js";
+import { updateTenantRentStatusSchema } from "../schemas/paymentRecord.schema.js";
+import { handleQuickOverrideRentStatus } from "../controllers/paymentRecord.controller.js";
 
 const router = Router();
 
@@ -60,6 +62,14 @@ router.patch(
   uploadAgreementPdfMiddleware,
   validate(updateAgreementStatusSchema),
   handleUpdateAgreementStatus,
+);
+
+// Admin Quick Rent Status Override
+router.patch(
+  "/:id/rent-status",
+  requireAdmin,
+  validate(updateTenantRentStatusSchema),
+  handleQuickOverrideRentStatus,
 );
 
 // On-Demand Pre-Signed Download URL (Admin or profile owner)

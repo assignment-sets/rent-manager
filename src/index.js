@@ -8,6 +8,7 @@ import tenantRoutes from "./routes/tenant.route.js";
 import rentableUnitRoutes from "./routes/rentableUnit.route.js";
 import dashboardRoutes from "./routes/dashboard.route.js";
 import paymentMethodRoutes from "./routes/paymentMethod.route.js";
+import paymentRoutes from "./routes/paymentRecord.route.js";
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use("/api/tenants", tenantRoutes);
 app.use("/api/rentable-units", rentableUnitRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

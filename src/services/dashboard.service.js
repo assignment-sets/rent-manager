@@ -57,6 +57,8 @@ export const getAggregatedDashboardProperties = async () => {
       const t = unit.tenantId;
       const u = t.userId || {};
       tenantPayload = {
+        id: t._id,
+        userId: u._id || "",
         name: u.name || "",
         phone: u.phone || "",
         whatsappPhone: t.whatsappPhone || "",

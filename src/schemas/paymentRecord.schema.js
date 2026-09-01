@@ -42,10 +42,13 @@ export const recordPaymentSchema = z.object({
 
 /**
  * Direct Quick Override for Tenant Rent Status (Admin Action)
+ * Strictly allows 'Paid' and 'Pending'. 'Overdue' is a derived mathematical state.
  */
 export const updateTenantRentStatusSchema = z.object({
-  rentStatus: z.enum(["Paid", "Pending", "Overdue"], {
-    message: "rentStatus must be 'Paid', 'Pending', or 'Overdue'",
+  rentStatus: z.enum(["Paid", "Pending"], {
+    message:
+      "rentStatus must be 'Paid' or 'Pending'. 'Overdue' is a derived ledger state and cannot be manually overridden.",
   }),
   rentDueDate: z.string().trim().optional(),
 });
+

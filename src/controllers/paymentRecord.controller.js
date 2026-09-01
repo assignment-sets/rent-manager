@@ -143,11 +143,13 @@ export const handleQuickOverrideRentStatus = async (req, res) => {
     const result = await paymentRecordService.quickOverrideRentStatus(
       req.params.id,
       req.body,
+      req.user.id,
     );
 
     return res.status(200).json({
       success: true,
-      message: "Tenant rent status updated successfully",
+      message:
+        "Tenant rent status updated and ledger synchronized successfully",
       data: result,
     });
   } catch (error) {

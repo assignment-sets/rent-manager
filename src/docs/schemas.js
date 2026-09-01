@@ -278,6 +278,70 @@ export const getComponentSchemas = () => ({
     },
   },
 
+  VacateUnitRequest: {
+    type: "object",
+    properties: {
+      vacateReason: {
+        type: "string",
+        example: "Lease agreement term completed naturally",
+      },
+    },
+  },
+
+  CreateTenantVacateNoticeRequest: {
+    type: "object",
+    properties: {
+      intendedVacateDate: {
+        type: "string",
+        format: "date-time",
+        example: "2026-10-15T00:00:00.000Z",
+        description: "Target move-out date (defaults to today + notice period months if omitted)",
+      },
+      reason: {
+        type: "string",
+        example: "Relocating to another city for employment",
+      },
+    },
+  },
+
+  ServeAdminVacateNoticeRequest: {
+    type: "object",
+    required: ["intendedVacateDate"],
+    properties: {
+      intendedVacateDate: {
+        type: "string",
+        format: "date-time",
+        example: "2026-10-31T00:00:00.000Z",
+        description: "Formal move-out deadline date served by admin",
+      },
+      reason: {
+        type: "string",
+        example: "Scheduled property structural renovation work",
+      },
+      adminNotes: {
+        type: "string",
+        example: "Security deposit reconciliation will be processed upon inspection",
+      },
+    },
+  },
+
+  ReviewVacateNoticeRequest: {
+    type: "object",
+    required: ["action"],
+    properties: {
+      action: {
+        type: "string",
+        enum: ["APPROVE_AND_VACATE", "REJECT"],
+        example: "APPROVE_AND_VACATE",
+        description: "APPROVE_AND_VACATE executes atomic room vacating; REJECT cancels notice",
+      },
+      adminNotes: {
+        type: "string",
+        example: "Key handover scheduled for 5 PM",
+      },
+    },
+  },
+
 
   // =========================================================================
   // 3. PAYMENT REQUEST DTOs
@@ -483,6 +547,18 @@ export const getComponentSchemas = () => ({
         example: "Paid",
       },
       rentDueDate: { type: "string", example: "5th of every month" },
+      tenancyStatus: {
+        type: "string",
+        enum: ["ACTIVE", "VACATED"],
+        example: "ACTIVE",
+      },
+      vacatedAt: {
+        type: "string",
+        format: "date-time",
+        nullable: true,
+        example: null,
+      },
+      vacateReason: { type: "string", example: "" },
       moveInDate: { type: "string", format: "date-time", example: "2026-08-01T00:00:00.000Z" },
       daysOccupied: { type: "integer", example: 27 },
       leaseEnd: { type: "string", format: "date-time", example: "2027-07-31T00:00:00.000Z" },
@@ -497,6 +573,57 @@ export const getComponentSchemas = () => ({
       },
     },
   },
+
+  VacateNoticeDTO: {
+    type: "object",
+    required: ["_id", "tenantId", "userId", "unitId", "unitCode", "initiatedBy", "intendedVacateDate", "status"],
+    properties: {
+      _id: { type: "string", example: "6a817455c820f80677ef339a" },
+      tenantId: { type: "string", example: "6a816455c820f80677ef266d" },
+      userId: { type: "string", example: "6a81419007951455df97f003" },
+      unitId: { type: "string", example: "6a7ed5fea18dd1025225a0f0" },
+      unitCode: { type: "string", example: "B-101" },
+      initiatedBy: { type: "string", enum: ["TENANT", "ADMIN"], example: "TENANT" },
+      noticePeriodMonths: { type: "number", example: 1 },
+      noticeDate: { type: "string", format: "date-time", example: "2026-09-01T00:00:00.000Z" },
+      intendedVacateDate: { type: "string", format: "date-time", example: "2026-10-01T00:00:00.000Z" },
+      reason: { type: "string", example: "Relocating for work" },
+      status: {
+        type: "string",
+        enum: ["PENDING", "NOTICE_SERVED", "COMPLETED", "REJECTED", "CANCELLED"],
+        example: "PENDING",
+      },
+      adminNotes: { type: "string", example: "" },
+      resolvedAt: { type: "string", format: "date-time", nullable: true, example: null },
+      resolvedBy: { type: "string", nullable: true, example: null },
+      createdAt: { type: "string", format: "date-time", example: "2026-09-01T08:00:00.000Z" },
+      updatedAt: { type: "string", format: "date-time", example: "2026-09-01T08:00:00.000Z" },
+    },
+  },
+
+  VacateNoticeResponse: {
+    type: "object",
+    required: ["success"],
+    properties: {
+      success: { type: "boolean", example: true },
+      message: { type: "string", example: "Move-out notice retrieved successfully" },
+      data: { $ref: "#/components/schemas/VacateNoticeDTO" },
+    },
+  },
+
+  VacateNoticeListResponse: {
+    type: "object",
+    required: ["success", "count", "data"],
+    properties: {
+      success: { type: "boolean", example: true },
+      count: { type: "integer", example: 1 },
+      data: {
+        type: "array",
+        items: { $ref: "#/components/schemas/VacateNoticeDTO" },
+      },
+    },
+  },
+
 
   TenantUserSummaryDTO: {
     type: "object",

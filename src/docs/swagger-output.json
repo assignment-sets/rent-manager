@@ -579,6 +579,108 @@
         }
       }
     },
+    "/api/tenants/vacate-notice": {
+      "post": {
+        "description": "Tenant submits intent to move out. Calculates default notice period deadline from room specs.",
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacateNoticeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Tenant Operations"
+        ],
+        "summary": "Submit move-out notice (Tenant only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTenantVacateNoticeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenants/my-vacate-notice": {
+      "get": {
+        "description": "Returns any active pending or served move-out notice for the caller's tenancy.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacateNoticeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Tenant Operations"
+        ],
+        "summary": "Get current active move-out notice for logged-in tenant"
+      }
+    },
     "/api/tenants/submit-agreement-docs": {
       "post": {
         "description": "Uploads Aadhaar card & passport photo to private AWS S3 and marks agreementStatus as SUBMITTED.",
@@ -880,6 +982,189 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UpdateTenantProfileRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenants/vacate-notices": {
+      "get": {
+        "description": "Admin inbox filterable by status (PENDING, NOTICE_SERVED, COMPLETED, REJECTED) and initiatedBy (TENANT, ADMIN).",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacateNoticeListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Tenant Operations"
+        ],
+        "summary": "List all move-out notices across properties (Admin only)"
+      }
+    },
+    "/api/tenants/vacate-notices/{id}/review": {
+      "patch": {
+        "description": "Admin approves (executes atomic room vacate) or rejects a tenant-submitted move-out notice.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacateNoticeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewVacateNoticeRequest"
+              }
+            }
+          }
+        },
+        "tags": [
+          "Tenant Operations"
+        ],
+        "summary": "Review tenant move-out notice (Admin only)"
+      }
+    },
+    "/api/tenants/{id}/serve-vacate-notice": {
+      "post": {
+        "description": "Admin serves formal move-out notice with target deadline and optional reason.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VacateNoticeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Tenant Operations"
+        ],
+        "summary": "Serve move-out / eviction notice to tenant (Admin only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServeAdminVacateNoticeRequest"
               }
             }
           }
@@ -1378,7 +1663,7 @@
     },
     "/api/rentable-units/{identifier}/vacate": {
       "post": {
-        "description": "Dissociates existing tenant, resets unit status to vacant, and records vacated state.",
+        "description": "Atomically snapshots unit onto tenant, marks tenancyStatus as VACATED, resets unit to vacant, and completes open notices.",
         "parameters": [
           {
             "name": "identifier",
@@ -1396,6 +1681,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DashboardUnitDTO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
                 }
               }
             }
@@ -1421,10 +1716,20 @@
             }
           }
         },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VacateUnitRequest"
+              }
+            }
+          }
+        },
         "tags": [
           "Rentable Units"
         ],
-        "summary": "Vacate rentable unit and reset status to vacant (Admin only)"
+        "summary": "Vacate rentable unit atomically and preserve tenant history (Admin only)"
       }
     },
     "/api/dashboard/": {
@@ -2595,6 +2900,73 @@
           }
         }
       },
+      "VacateUnitRequest": {
+        "type": "object",
+        "properties": {
+          "vacateReason": {
+            "type": "string",
+            "example": "Lease agreement term completed naturally"
+          }
+        }
+      },
+      "CreateTenantVacateNoticeRequest": {
+        "type": "object",
+        "properties": {
+          "intendedVacateDate": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-15T00:00:00.000Z",
+            "description": "Target move-out date (defaults to today + notice period months if omitted)"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Relocating to another city for employment"
+          }
+        }
+      },
+      "ServeAdminVacateNoticeRequest": {
+        "type": "object",
+        "required": [
+          "intendedVacateDate"
+        ],
+        "properties": {
+          "intendedVacateDate": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-31T00:00:00.000Z",
+            "description": "Formal move-out deadline date served by admin"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Scheduled property structural renovation work"
+          },
+          "adminNotes": {
+            "type": "string",
+            "example": "Security deposit reconciliation will be processed upon inspection"
+          }
+        }
+      },
+      "ReviewVacateNoticeRequest": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "APPROVE_AND_VACATE",
+              "REJECT"
+            ],
+            "example": "APPROVE_AND_VACATE",
+            "description": "APPROVE_AND_VACATE executes atomic room vacating; REJECT cancels notice"
+          },
+          "adminNotes": {
+            "type": "string",
+            "example": "Key handover scheduled for 5 PM"
+          }
+        }
+      },
       "RecordPaymentRequest": {
         "type": "object",
         "required": [
@@ -2986,6 +3358,24 @@
             "type": "string",
             "example": "5th of every month"
           },
+          "tenancyStatus": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "VACATED"
+            ],
+            "example": "ACTIVE"
+          },
+          "vacatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "vacateReason": {
+            "type": "string",
+            "example": ""
+          },
           "moveInDate": {
             "type": "string",
             "format": "date-time",
@@ -3008,6 +3398,146 @@
           },
           "assignedUnit": {
             "$ref": "#/components/schemas/AssignedUnitDTO"
+          }
+        }
+      },
+      "VacateNoticeDTO": {
+        "type": "object",
+        "required": [
+          "_id",
+          "tenantId",
+          "userId",
+          "unitId",
+          "unitCode",
+          "initiatedBy",
+          "intendedVacateDate",
+          "status"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "6a817455c820f80677ef339a"
+          },
+          "tenantId": {
+            "type": "string",
+            "example": "6a816455c820f80677ef266d"
+          },
+          "userId": {
+            "type": "string",
+            "example": "6a81419007951455df97f003"
+          },
+          "unitId": {
+            "type": "string",
+            "example": "6a7ed5fea18dd1025225a0f0"
+          },
+          "unitCode": {
+            "type": "string",
+            "example": "B-101"
+          },
+          "initiatedBy": {
+            "type": "string",
+            "enum": [
+              "TENANT",
+              "ADMIN"
+            ],
+            "example": "TENANT"
+          },
+          "noticePeriodMonths": {
+            "type": "number",
+            "example": 1
+          },
+          "noticeDate": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-01T00:00:00.000Z"
+          },
+          "intendedVacateDate": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-01T00:00:00.000Z"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Relocating for work"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "NOTICE_SERVED",
+              "COMPLETED",
+              "REJECTED",
+              "CANCELLED"
+            ],
+            "example": "PENDING"
+          },
+          "adminNotes": {
+            "type": "string",
+            "example": ""
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "resolvedBy": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-01T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-01T08:00:00.000Z"
+          }
+        }
+      },
+      "VacateNoticeResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "Move-out notice retrieved successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/VacateNoticeDTO"
+          }
+        }
+      },
+      "VacateNoticeListResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "count",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "count": {
+            "type": "integer",
+            "example": 1
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VacateNoticeDTO"
+            }
           }
         }
       },

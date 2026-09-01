@@ -395,6 +395,49 @@ const runGenerator = async () => {
     setResponse(getPresignedUrlOp, "200", "PresignedUrlResponse");
   }
 
+  const submitVacateNoticeOp = getOp("/api/tenants/vacate-notice", "post");
+  if (submitVacateNoticeOp) {
+    submitVacateNoticeOp.tags = ["Tenant Operations"];
+    submitVacateNoticeOp.summary = "Submit move-out notice (Tenant only)";
+    submitVacateNoticeOp.description = "Tenant submits intent to move out. Calculates default notice period deadline from room specs.";
+    setRequestBody(submitVacateNoticeOp, "CreateTenantVacateNoticeRequest");
+    setResponse(submitVacateNoticeOp, "201", "VacateNoticeResponse");
+  }
+
+  const getMyVacateNoticeOp = getOp("/api/tenants/my-vacate-notice", "get");
+  if (getMyVacateNoticeOp) {
+    getMyVacateNoticeOp.tags = ["Tenant Operations"];
+    getMyVacateNoticeOp.summary = "Get current active move-out notice for logged-in tenant";
+    getMyVacateNoticeOp.description = "Returns any active pending or served move-out notice for the caller's tenancy.";
+    setResponse(getMyVacateNoticeOp, "200", "VacateNoticeResponse");
+  }
+
+  const getAllVacateNoticesOp = getOp("/api/tenants/vacate-notices", "get");
+  if (getAllVacateNoticesOp) {
+    getAllVacateNoticesOp.tags = ["Tenant Operations"];
+    getAllVacateNoticesOp.summary = "List all move-out notices across properties (Admin only)";
+    getAllVacateNoticesOp.description = "Admin inbox filterable by status (PENDING, NOTICE_SERVED, COMPLETED, REJECTED) and initiatedBy (TENANT, ADMIN).";
+    setResponse(getAllVacateNoticesOp, "200", "VacateNoticeListResponse");
+  }
+
+  const reviewVacateNoticeOp = getOp("/api/tenants/vacate-notices/{id}/review", "patch");
+  if (reviewVacateNoticeOp) {
+    reviewVacateNoticeOp.tags = ["Tenant Operations"];
+    reviewVacateNoticeOp.summary = "Review tenant move-out notice (Admin only)";
+    reviewVacateNoticeOp.description = "Admin approves (executes atomic room vacate) or rejects a tenant-submitted move-out notice.";
+    setRequestBody(reviewVacateNoticeOp, "ReviewVacateNoticeRequest");
+    setResponse(reviewVacateNoticeOp, "200", "VacateNoticeResponse");
+  }
+
+  const serveAdminVacateNoticeOp = getOp("/api/tenants/{id}/serve-vacate-notice", "post");
+  if (serveAdminVacateNoticeOp) {
+    serveAdminVacateNoticeOp.tags = ["Tenant Operations"];
+    serveAdminVacateNoticeOp.summary = "Serve move-out / eviction notice to tenant (Admin only)";
+    serveAdminVacateNoticeOp.description = "Admin serves formal move-out notice with target deadline and optional reason.";
+    setRequestBody(serveAdminVacateNoticeOp, "ServeAdminVacateNoticeRequest");
+    setResponse(serveAdminVacateNoticeOp, "201", "VacateNoticeResponse");
+  }
+
   // =========================================================================
   // 4. RENTABLE UNITS MODULE
   // =========================================================================
@@ -443,8 +486,9 @@ const runGenerator = async () => {
   const vacateUnitByPostOp = getOp("/api/rentable-units/{identifier}/vacate", "post");
   if (vacateUnitByPostOp) {
     vacateUnitByPostOp.tags = ["Rentable Units"];
-    vacateUnitByPostOp.summary = "Vacate rentable unit and reset status to vacant (Admin only)";
-    vacateUnitByPostOp.description = "Dissociates existing tenant, resets unit status to vacant, and records vacated state.";
+    vacateUnitByPostOp.summary = "Vacate rentable unit atomically and preserve tenant history (Admin only)";
+    vacateUnitByPostOp.description = "Atomically snapshots unit onto tenant, marks tenancyStatus as VACATED, resets unit to vacant, and completes open notices.";
+    setRequestBody(vacateUnitByPostOp, "VacateUnitRequest");
     setResponse(vacateUnitByPostOp, "200", "DashboardUnitDTO");
   }
 

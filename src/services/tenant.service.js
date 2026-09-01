@@ -743,6 +743,39 @@ export const getPresignedDocumentUrl = async (
 };
 
 /**
+ * Helper to calculate and validate vacate date against predetermined unit notice period
+ */
+const calculateAndValidateVacateDate = (
+  intendedVacateDate,
+  noticePeriodMonths = 1,
+) => {
+  const minVacateDate = new Date();
+  minVacateDate.setMonth(minVacateDate.getMonth() + noticePeriodMonths);
+
+  if (!intendedVacateDate) {
+    return minVacateDate;
+  }
+
+  const suppliedDate = new Date(intendedVacateDate);
+  if (isNaN(suppliedDate.getTime())) {
+    return minVacateDate;
+  }
+
+  // Grace window of 24 hours for timezone differences
+  const minAllowedTimestamp = minVacateDate.getTime() - 24 * 60 * 60 * 1000;
+  if (suppliedDate.getTime() < minAllowedTimestamp) {
+    const minIsoStr = minVacateDate.toISOString().split("T")[0];
+    const error = new Error(
+      `Intended vacate date violates the predetermined legal notice period of ${noticePeriodMonths} month(s). The earliest allowable move-out date is ${minIsoStr}.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return suppliedDate;
+};
+
+/**
  * Tenant submits move-out notice
  */
 export const createTenantVacateNotice = async (
@@ -779,11 +812,10 @@ export const createTenantVacateNotice = async (
   }
 
   const noticePeriodMonths = unit.specs?.noticePeriodMonths || 1;
-  let finalVacateDate = intendedVacateDate ? new Date(intendedVacateDate) : null;
-  if (!finalVacateDate || isNaN(finalVacateDate.getTime())) {
-    finalVacateDate = new Date();
-    finalVacateDate.setMonth(finalVacateDate.getMonth() + noticePeriodMonths);
-  }
+  const finalVacateDate = calculateAndValidateVacateDate(
+    intendedVacateDate,
+    noticePeriodMonths,
+  );
 
   const notice = await VacateNotice.create({
     tenantId: tenant._id,
@@ -850,7 +882,10 @@ export const serveAdminVacateNotice = async (
   }
 
   const noticePeriodMonths = unit.specs?.noticePeriodMonths || 1;
-  const finalVacateDate = new Date(intendedVacateDate);
+  const finalVacateDate = calculateAndValidateVacateDate(
+    intendedVacateDate,
+    noticePeriodMonths,
+  );
 
   const notice = await VacateNotice.create({
     tenantId: tenant._id,

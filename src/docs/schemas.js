@@ -295,7 +295,7 @@ export const getComponentSchemas = () => ({
         type: "string",
         format: "date-time",
         example: "2026-10-15T00:00:00.000Z",
-        description: "Target move-out date (defaults to today + notice period months if omitted)",
+        description: "Target move-out date (optional; defaults to today + unit's predetermined noticePeriodMonths; cannot violate minimum notice period)",
       },
       reason: {
         type: "string",
@@ -306,13 +306,12 @@ export const getComponentSchemas = () => ({
 
   ServeAdminVacateNoticeRequest: {
     type: "object",
-    required: ["intendedVacateDate"],
     properties: {
       intendedVacateDate: {
         type: "string",
         format: "date-time",
         example: "2026-10-31T00:00:00.000Z",
-        description: "Formal move-out deadline date served by admin",
+        description: "Formal move-out deadline date (optional; automatically computed from unit's predetermined legal noticePeriodMonths if omitted; cannot violate minimum notice period)",
       },
       reason: {
         type: "string",

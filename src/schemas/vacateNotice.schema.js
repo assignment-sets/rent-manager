@@ -17,15 +17,15 @@ export const createTenantVacateNoticeSchema = z.object({
 
 /**
  * Admin Serve Move-Out Notice Schema
+ * intendedVacateDate is optional; if omitted, automatically computed from unit's predetermined noticePeriodMonths
  */
 export const serveAdminVacateNoticeSchema = z.object({
   intendedVacateDate: z
-    .string({
-      required_error: "Intended vacate date is required",
-    })
+    .string()
     .datetime({
       message: "intendedVacateDate must be a valid ISO 8601 date string",
-    }),
+    })
+    .optional(),
   reason: z.string().trim().optional(),
   adminNotes: z.string().trim().optional(),
 });

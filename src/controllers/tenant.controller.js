@@ -244,4 +244,113 @@ export const handleGetPresignedDocumentUrl = async (req, res) => {
   }
 };
 
+/**
+ * Tenant submits move-out notice
+ */
+export const handleSubmitVacateNotice = async (req, res) => {
+  try {
+    const notice = await tenantService.createTenantVacateNotice(
+      req.user.id,
+      req.body,
+    );
+    return res.status(201).json({
+      success: true,
+      message: "Move-out notice submitted successfully",
+      data: notice,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Tenant retrieves their active move-out notice
+ */
+export const handleGetMyVacateNotice = async (req, res) => {
+  try {
+    const notice = await tenantService.getMyActiveVacateNotice(req.user.id);
+    return res.status(200).json({
+      success: true,
+      data: notice,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Admin serves a move-out notice to a tenant
+ */
+export const handleServeAdminVacateNotice = async (req, res) => {
+  try {
+    const notice = await tenantService.serveAdminVacateNotice(
+      req.params.id,
+      req.body,
+      req.user.id,
+    );
+    return res.status(201).json({
+      success: true,
+      message: "Move-out notice served to tenant successfully",
+      data: notice,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Admin lists all move-out notices
+ */
+export const handleGetAllVacateNotices = async (req, res) => {
+  try {
+    const notices = await tenantService.getAllVacateNotices(req.query);
+    return res.status(200).json({
+      success: true,
+      count: notices.length,
+      data: notices,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Admin reviews a tenant-submitted move-out notice
+ */
+export const handleReviewVacateNotice = async (req, res) => {
+  try {
+    const result = await tenantService.reviewVacateNotice(
+      req.params.id,
+      req.body,
+      req.user,
+    );
+    return res.status(200).json({
+      success: true,
+      message:
+        req.body.action === "APPROVE_AND_VACATE"
+          ? "Vacate notice approved and unit vacated successfully"
+          : "Vacate notice rejected successfully",
+      data: result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+
 

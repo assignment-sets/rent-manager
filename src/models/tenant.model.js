@@ -160,6 +160,33 @@ const tenantSchema = new mongoose.Schema(
       type: emergencyContactSchema,
       default: () => ({ name: "", relation: "", phone: "" }),
     },
+
+    // Tenancy & Vacate Lifecycle
+    tenancyStatus: {
+      type: String,
+      enum: ["ACTIVE", "VACATED"],
+      default: "ACTIVE",
+      index: true,
+    },
+    vacatedAt: {
+      type: Date,
+      default: null,
+    },
+    vacateReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    lastAssignedUnit: {
+      unitId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "RentableUnit",
+        default: null,
+      },
+      unitCode: { type: String, trim: true, default: "" },
+      name: { type: String, trim: true, default: "" },
+      rent: { type: Number, default: 0 },
+    },
   },
   {
     timestamps: true,

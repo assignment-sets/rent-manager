@@ -11,6 +11,8 @@ import {
   authenticateToken,
   requireAdmin,
 } from "../middleware/auth.middleware.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { vacateUnitSchema } from "../schemas/vacateNotice.schema.js";
 
 const router = Router();
 
@@ -33,6 +35,11 @@ router.patch("/:identifier", requireAdmin, handleUpdateRentableUnit);
 router.post("/:identifier/assign", requireAdmin, handleAssignTenantToUnit);
 
 // Vacate a unit (Admin only)
-router.post("/:identifier/vacate", requireAdmin, handleVacateRentableUnit);
+router.post(
+  "/:identifier/vacate",
+  requireAdmin,
+  validate(vacateUnitSchema),
+  handleVacateRentableUnit,
+);
 
 export default router;

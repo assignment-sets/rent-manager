@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { Tenant } from "../models/tenant.model.js";
 import { User } from "../models/user.model.js";
 import { RentableUnit } from "../models/rentableUnit.model.js";
+import { VacateNotice } from "../models/vacateNotice.model.js";
 import { hasRole } from "../middleware/auth.middleware.js";
 import {
   uploadBufferToS3,
@@ -12,6 +13,7 @@ import {
   hydrateDocumentUrls,
   generatePresignedDownloadUrl,
 } from "./storage.service.js";
+import { vacateRentableUnit } from "./rentableUnit.service.js";
 
 /**
  * Helper to compute ordinal suffix for day of month (e.g. 1st, 2nd, 15th)
@@ -35,12 +37,28 @@ const getOrdinalDay = (day) => {
  */
 const formatTenantResponse = async (tenant, assignedUnit = null) => {
   if (!tenant) return null;
-  const json = typeof tenant.toJSON === "function" ? tenant.toJSON() : { ...tenant };
+  const json =
+    typeof tenant.toJSON === "function" ? tenant.toJSON() : { ...tenant };
   const hydratedDocs = await hydrateDocumentUrls(json.documents);
+
+  // If no active unit found but tenant has historical snapshot, attach historical unit
+  let effectiveUnit = assignedUnit;
+  if (!effectiveUnit && json.lastAssignedUnit?.unitCode) {
+    effectiveUnit = {
+      id: json.lastAssignedUnit.unitId,
+      unitCode: json.lastAssignedUnit.unitCode,
+      name: json.lastAssignedUnit.name,
+      rent: json.lastAssignedUnit.rent,
+      status: "vacated",
+      isHistorical: true,
+      vacatedAt: json.vacatedAt,
+    };
+  }
+
   return {
     ...json,
     documents: hydratedDocs,
-    assignedUnit,
+    assignedUnit: effectiveUnit,
   };
 };
 
@@ -723,5 +741,221 @@ export const getPresignedDocumentUrl = async (
     expiresIn,
   };
 };
+
+/**
+ * Tenant submits move-out notice
+ */
+export const createTenantVacateNotice = async (
+  userId,
+  { intendedVacateDate, reason },
+) => {
+  const tenant = await Tenant.findOne({ userId });
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+  if (!unit) {
+    const error = new Error(
+      "You do not currently occupy an active rentable unit.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existingNotice = await VacateNotice.findOne({
+    tenantId: tenant._id,
+    status: { $in: ["PENDING", "NOTICE_SERVED"] },
+  });
+
+  if (existingNotice) {
+    const error = new Error(
+      "An active move-out notice already exists for your unit.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const noticePeriodMonths = unit.specs?.noticePeriodMonths || 1;
+  let finalVacateDate = intendedVacateDate ? new Date(intendedVacateDate) : null;
+  if (!finalVacateDate || isNaN(finalVacateDate.getTime())) {
+    finalVacateDate = new Date();
+    finalVacateDate.setMonth(finalVacateDate.getMonth() + noticePeriodMonths);
+  }
+
+  const notice = await VacateNotice.create({
+    tenantId: tenant._id,
+    userId: tenant.userId,
+    unitId: unit._id,
+    unitCode: unit.unitCode,
+    initiatedBy: "TENANT",
+    noticePeriodMonths,
+    intendedVacateDate: finalVacateDate,
+    reason: (reason || "").trim(),
+    status: "PENDING",
+  });
+
+  return notice;
+};
+
+/**
+ * Tenant fetches their active move-out notice
+ */
+export const getMyActiveVacateNotice = async (userId) => {
+  const tenant = await Tenant.findOne({ userId });
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const notice = await VacateNotice.findOne({
+    tenantId: tenant._id,
+    status: { $in: ["PENDING", "NOTICE_SERVED"] },
+  }).sort({ createdAt: -1 });
+
+  return notice;
+};
+
+/**
+ * Admin serves a move-out notice to a tenant
+ */
+export const serveAdminVacateNotice = async (
+  tenantId,
+  { intendedVacateDate, reason, adminNotes },
+  adminUserId,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(tenantId)) {
+    const error = new Error("Invalid tenant ID format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenant = await Tenant.findById(tenantId);
+  if (!tenant) {
+    const error = new Error("Tenant profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const unit = await RentableUnit.findOne({ tenantId: tenant._id });
+  if (!unit) {
+    const error = new Error(
+      "Tenant does not currently occupy an active rentable unit.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const noticePeriodMonths = unit.specs?.noticePeriodMonths || 1;
+  const finalVacateDate = new Date(intendedVacateDate);
+
+  const notice = await VacateNotice.create({
+    tenantId: tenant._id,
+    userId: tenant.userId,
+    unitId: unit._id,
+    unitCode: unit.unitCode,
+    initiatedBy: "ADMIN",
+    noticePeriodMonths,
+    intendedVacateDate: finalVacateDate,
+    reason: (reason || "").trim(),
+    adminNotes: (adminNotes || "").trim(),
+    status: "NOTICE_SERVED",
+    resolvedBy: adminUserId,
+  });
+
+  return notice;
+};
+
+/**
+ * Admin lists all move-out notices with optional filters
+ */
+export const getAllVacateNotices = async (filters = {}) => {
+  const query = {};
+  if (filters.status) query.status = filters.status;
+  if (filters.initiatedBy) query.initiatedBy = filters.initiatedBy;
+  if (filters.unitCode) query.unitCode = filters.unitCode.trim().toUpperCase();
+
+  const notices = await VacateNotice.find(query)
+    .populate({
+      path: "tenantId",
+      select: "whatsappPhone aadharNumber rentStatus tenancyStatus",
+      populate: { path: "userId", select: "name email phone" },
+    })
+    .populate("userId", "name email phone")
+    .populate("unitId", "unitCode name rent status")
+    .sort({ createdAt: -1 });
+
+  return notices;
+};
+
+/**
+ * Admin reviews a tenant-submitted move-out notice
+ */
+export const reviewVacateNotice = async (
+  noticeId,
+  { action, adminNotes },
+  adminUser,
+) => {
+  if (!mongoose.Types.ObjectId.isValid(noticeId)) {
+    const error = new Error("Invalid notice ID format.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const notice = await VacateNotice.findById(noticeId);
+  if (!notice) {
+    const error = new Error("Vacate notice not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (notice.status !== "PENDING") {
+    const error = new Error(
+      `Cannot review notice with status '${notice.status}'. Only 'PENDING' notices can be reviewed.`,
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (action === "APPROVE_AND_VACATE") {
+    // Atomically execute unit vacate
+    const vacateResult = await vacateRentableUnit(
+      notice.unitId,
+      adminUser,
+      notice.reason || "Vacate notice approved by admin",
+    );
+
+    notice.status = "COMPLETED";
+    if (adminNotes) notice.adminNotes = adminNotes.trim();
+    notice.resolvedAt = new Date();
+    notice.resolvedBy = adminUser.id || adminUser._id;
+    await notice.save();
+
+    return {
+      notice,
+      vacateResult,
+    };
+  } else if (action === "REJECT") {
+    notice.status = "REJECTED";
+    if (adminNotes) notice.adminNotes = adminNotes.trim();
+    notice.resolvedAt = new Date();
+    notice.resolvedBy = adminUser.id || adminUser._id;
+    await notice.save();
+
+    return {
+      notice,
+    };
+  } else {
+    const error = new Error(
+      "Invalid review action. Allowed: 'APPROVE_AND_VACATE' or 'REJECT'",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+};
+
 
 

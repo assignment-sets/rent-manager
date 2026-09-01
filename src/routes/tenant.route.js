@@ -10,6 +10,11 @@ import {
   handleSubmitAgreementDocs,
   handleUpdateAgreementStatus,
   handleGetPresignedDocumentUrl,
+  handleSubmitVacateNotice,
+  handleGetMyVacateNotice,
+  handleServeAdminVacateNotice,
+  handleGetAllVacateNotices,
+  handleReviewVacateNotice,
 } from "../controllers/tenant.controller.js";
 import {
   authenticateToken,
@@ -26,6 +31,11 @@ import {
   updateAgreementStatusSchema,
 } from "../schemas/tenant.schema.js";
 import { updateTenantRentStatusSchema } from "../schemas/paymentRecord.schema.js";
+import {
+  createTenantVacateNoticeSchema,
+  serveAdminVacateNoticeSchema,
+  reviewVacateNoticeSchema,
+} from "../schemas/vacateNotice.schema.js";
 import { handleQuickOverrideRentStatus } from "../controllers/paymentRecord.controller.js";
 
 const router = Router();
@@ -43,6 +53,14 @@ router.post(
 router.get("/me", handleGetMyTenantProfile);
 router.patch("/me", handleUpdateMyTenantProfile);
 
+// Move-out Notice lifecycle (Tenant-facing)
+router.post(
+  "/vacate-notice",
+  validate(createTenantVacateNoticeSchema),
+  handleSubmitVacateNotice,
+);
+router.get("/my-vacate-notice", handleGetMyVacateNotice);
+
 // Phase 2: Agreement Document Submission (Atomic multipart upload to S3 + DB update)
 router.post(
   "/submit-agreement-docs",
@@ -54,6 +72,21 @@ router.post(
 // Admin-only operations
 router.get("/", requireAdmin, handleGetAllTenants);
 router.delete("/:id", requireAdmin, handleDeleteTenant);
+
+// Move-out Notice lifecycle (Admin-facing)
+router.get("/vacate-notices", requireAdmin, handleGetAllVacateNotices);
+router.patch(
+  "/vacate-notices/:id/review",
+  requireAdmin,
+  validate(reviewVacateNoticeSchema),
+  handleReviewVacateNotice,
+);
+router.post(
+  "/:id/serve-vacate-notice",
+  requireAdmin,
+  validate(serveAdminVacateNoticeSchema),
+  handleServeAdminVacateNotice,
+);
 
 // Admin Agreement Status Update (Supports direct PDF file upload, URL attachment, or status update)
 router.patch(

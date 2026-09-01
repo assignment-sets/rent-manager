@@ -114,14 +114,16 @@ export const handleAssignTenantToUnit = async (req, res) => {
 export const handleVacateRentableUnit = async (req, res) => {
   try {
     const { identifier } = req.params;
-    const vacatedUnit = await rentableUnitService.vacateRentableUnit(
+    const { vacateReason } = req.body || {};
+    const result = await rentableUnitService.vacateRentableUnit(
       identifier,
       req.user,
+      vacateReason,
     );
     return res.status(200).json({
       success: true,
       message: "Rentable unit vacated successfully",
-      data: vacatedUnit,
+      data: result,
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({

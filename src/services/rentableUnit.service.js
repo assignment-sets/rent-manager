@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { RentableUnit } from "../models/rentableUnit.model.js";
 import { Tenant } from "../models/tenant.model.js";
 import { User } from "../models/user.model.js";
+import { VacateNotice } from "../models/vacateNotice.model.js";
 import { hasRole } from "../middleware/auth.middleware.js";
 
 // Helper to build full relational population query
@@ -301,7 +302,19 @@ export const assignTenantToUnit = async (
   targetUnit.status = "occupied";
   await targetUnit.save();
 
-  // 6. Synchronize user's assignedUnit fields
+  // 6. Update tenant status and lastAssignedUnit
+  await Tenant.findByIdAndUpdate(tenant._id, {
+    tenancyStatus: "ACTIVE",
+    vacatedAt: null,
+    lastAssignedUnit: {
+      unitId: targetUnit._id,
+      unitCode: targetUnit.unitCode,
+      name: targetUnit.name,
+      rent: targetUnit.rent,
+    },
+  });
+
+  // 7. Synchronize user's assignedUnit fields
   await User.findByIdAndUpdate(tenant.userId, {
     assignedUnitId: targetUnit._id,
     assignedUnitCode: targetUnit.unitCode,
@@ -319,9 +332,13 @@ export const assignTenantToUnit = async (
 
 /**
  * Vacate a rentable unit (Admin only)
- * Resets tenantId to null and status to 'vacant', and clears assigned unit on associated user.
+ * Atomically transitions unit to vacant, snapshots tenant history, and completes notices.
  */
-export const vacateRentableUnit = async (identifier, requestingUser) => {
+export const vacateRentableUnit = async (
+  identifier,
+  requestingUser,
+  vacateReason = "",
+) => {
   if (!hasRole(requestingUser, "ADMIN")) {
     const error = new Error("Access forbidden. Admin role required.");
     error.statusCode = 403;
@@ -345,13 +362,48 @@ export const vacateRentableUnit = async (identifier, requestingUser) => {
     throw error;
   }
 
+  let vacatedTenant = null;
+
   if (unit.tenantId) {
     const tenant = await Tenant.findById(unit.tenantId);
-    if (tenant && tenant.userId) {
-      await User.findByIdAndUpdate(tenant.userId, {
-        assignedUnitId: null,
-        assignedUnitCode: "",
-      });
+    if (tenant) {
+      const updatePayload = {
+        tenancyStatus: "VACATED",
+        vacatedAt: new Date(),
+        lastAssignedUnit: {
+          unitId: unit._id,
+          unitCode: unit.unitCode,
+          name: unit.name,
+          rent: unit.rent,
+        },
+      };
+      if (vacateReason) updatePayload.vacateReason = vacateReason.trim();
+
+      vacatedTenant = await Tenant.findByIdAndUpdate(
+        tenant._id,
+        updatePayload,
+        { returnDocument: "after" },
+      );
+
+      if (tenant.userId) {
+        await User.findByIdAndUpdate(tenant.userId, {
+          assignedUnitId: null,
+          assignedUnitCode: "",
+        });
+      }
+
+      await VacateNotice.updateMany(
+        {
+          unitId: unit._id,
+          tenantId: tenant._id,
+          status: { $in: ["PENDING", "NOTICE_SERVED"] },
+        },
+        {
+          status: "COMPLETED",
+          resolvedAt: new Date(),
+          resolvedBy: requestingUser.id || requestingUser._id,
+        },
+      );
     }
   }
 
@@ -362,5 +414,9 @@ export const vacateRentableUnit = async (identifier, requestingUser) => {
   const populatedUnit = await buildPopulateQuery(
     RentableUnit.findById(unit._id),
   );
-  return populatedUnit;
+
+  return {
+    unit: populatedUnit,
+    vacatedTenant,
+  };
 };

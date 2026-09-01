@@ -7,6 +7,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed": "node seed/seed-properties.js",
+    "swagger": "node src/docs/swagger.js",
     "infra:init": "cd infra && terraform init",
     "infra:plan": "cd infra && terraform plan",
     "infra:apply": "cd infra && terraform apply",
@@ -33,6 +34,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.1",
     "multer": "^2.2.0",
+    "swagger-autogen": "^2.23.7",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   }
 }

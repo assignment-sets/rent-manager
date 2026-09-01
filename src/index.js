@@ -8,9 +8,17 @@ import tenantRoutes from "./routes/tenant.route.js";
 import rentableUnitRoutes from "./routes/rentableUnit.route.js";
 import dashboardRoutes from "./routes/dashboard.route.js";
 import paymentMethodRoutes from "./routes/paymentMethod.route.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import swaggerUi from "swagger-ui-express";
 import paymentRoutes from "./routes/paymentRecord.route.js";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const swaggerDocumentPath = path.join(__dirname, "docs/swagger-output.json");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,6 +36,18 @@ app.use("/api/rentable-units", rentableUnitRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/payment-methods", paymentMethodRoutes);
 app.use("/api/payments", paymentRoutes);
+
+// Swagger Interactive API Documentation & Raw OpenAPI JSON
+if (fs.existsSync(swaggerDocumentPath)) {
+  const swaggerDocument = JSON.parse(
+    fs.readFileSync(swaggerDocumentPath, "utf-8"),
+  );
+  app.get("/api-docs.json", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.send(swaggerDocument);
+  });
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+}
 
 // Health check endpoint
 app.get("/health", (req, res) => {

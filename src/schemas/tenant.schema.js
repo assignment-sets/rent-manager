@@ -1,16 +1,25 @@
 import { z } from "zod";
 
 /**
- * Standard 10-digit Indian Mobile Number Schema
- * Accepts formats: "+91 9876543210", "+91-9876543210", "9876543210"
+ * Standard 10-digit Indian Mobile Number Regex & Schema
+ * Accepts formats:
+ * - Pure 10 digits: "9876543210"
+ * - With +91: "+919876543210", "+91 9876543210", "+91-9876543210"
+ * - With 91 (no plus): "919876543210", "91 9876543210", "91-9876543210"
+ * - With 0 (trunk prefix): "09876543210", "0 9876543210"
+ * - With 0091: "00919876543210"
  */
+export const INDIAN_PHONE_REGEX =
+  /^(?:(?:\+|0{0,2})91[\s\-]?)?(?:0[\s\-]?)?[6-9]\d{9}$/;
+
 export const indianPhoneSchema = z
   .string()
   .trim()
   .regex(
-    /^(?:\+91[\-\s]?)?[6-9]\d{9}$/,
-    "Invalid Indian phone number. Must be a valid 10-digit mobile number.",
+    INDIAN_PHONE_REGEX,
+    "Invalid Indian phone number. Must be a valid 10-digit mobile number with optional +91/91/0 prefix.",
   );
+
 
 /**
  * Standard 12-digit Indian Aadhar Number Schema
@@ -93,10 +102,10 @@ export const emergencyContactSchema = z
       .string()
       .trim()
       .refine(
-        (val) => val === "" || /^(?:\+91[\-\s]?)?[6-9]\d{9}$/.test(val),
+        (val) => val === "" || INDIAN_PHONE_REGEX.test(val),
         {
           message:
-            "Invalid emergency contact phone number. Must be a valid 10-digit mobile number.",
+            "Invalid emergency contact phone number. Must be a valid 10-digit mobile number with optional +91/91/0 prefix.",
         },
       )
       .default(""),

@@ -40,7 +40,7 @@ export const getComponentSchemas = () => ({
       email: { type: "string", format: "email", example: "rahul.sharma@gmail.com" },
       phone: {
         type: "string",
-        pattern: "^(?:\\+91[\\-\\s]?)?[6-9]\\d{9}$",
+        pattern: "^(?:(?:\\+|0{0,2})91[\\s\\-]?)?(?:0[\\s\\-]?)?[6-9]\\d{9}$",
         example: "9674752566",
         description: "10-digit Indian phone with optional +91",
       },
@@ -57,7 +57,7 @@ export const getComponentSchemas = () => ({
     type: "object",
     properties: {
       name: { type: "string", example: "Rahul Sharma" },
-      phone: { type: "string", pattern: "^(?:\\+91[\\-\\s]?)?[6-9]\\d{9}$", example: "9674752566" },
+      phone: { type: "string", pattern: "^(?:(?:\\+|0{0,2})91[\\s\\-]?)?(?:0[\\s\\-]?)?[6-9]\\d{9}$", example: "9674752566" },
     },
   },
 
@@ -100,12 +100,12 @@ export const getComponentSchemas = () => ({
     properties: {
       phone: {
         type: "string",
-        pattern: "^(?:\\+91[\\-\\s]?)?[6-9]\\d{9}$",
+        pattern: "^(?:(?:\\+|0{0,2})91[\\s\\-]?)?(?:0[\\s\\-]?)?[6-9]\\d{9}$",
         example: "9674752566",
       },
       whatsappPhone: {
         type: "string",
-        pattern: "^(?:\\+91[\\-\\s]?)?[6-9]\\d{9}$",
+        pattern: "^(?:(?:\\+|0{0,2})91[\\s\\-]?)?(?:0[\\s\\-]?)?[6-9]\\d{9}$",
         example: "9674752566",
       },
       aadharNumber: {
@@ -189,7 +189,7 @@ export const getComponentSchemas = () => ({
       },
       phone: {
         type: "string",
-        pattern: "^(?:\\+91[\\-\\s]?)?[6-9]\\d{9}$",
+        pattern: "^(?:(?:\\+|0{0,2})91[\\s\\-]?)?(?:0[\\s\\-]?)?[6-9]\\d{9}$",
         example: "9876543210",
       },
     },
@@ -233,6 +233,51 @@ export const getComponentSchemas = () => ({
       rentDueDate: { type: "string", example: "5th of every month" },
     },
   },
+
+  UpdateTenantProfileRequest: {
+    type: "object",
+    properties: {
+      phone: { type: "string", example: "9674752566" },
+      whatsappPhone: { type: "string", example: "9674752566" },
+      permanentAddress: { type: "string", example: "Flat 4B, Salt Lake, Kolkata" },
+      occupation: { type: "string", example: "Private Sector" },
+      occupancyType: { type: "string", example: "Solo / Bachelor" },
+      occupantsCount: { type: "integer", example: 1 },
+      emergencyContact: { $ref: "#/components/schemas/EmergencyContactInput" },
+    },
+  },
+
+  UpdateRentableUnitRequest: {
+    type: "object",
+    properties: {
+      name: { type: "string", example: "Room 101 (Executive Suite)" },
+      type: { type: "string", example: "1 BHK" },
+      rent: { type: "number", example: 5000 },
+      color: { type: "string", example: "#10b981" },
+      bio: { type: "string", example: "Corner flat with open balcony" },
+      status: {
+        type: "string",
+        enum: ["occupied", "vacant", "pending"],
+        example: "vacant",
+      },
+      specs: { $ref: "#/components/schemas/UnitSpecsDTO" },
+      snapshots: { $ref: "#/components/schemas/UnitSnapshotsDTO" },
+    },
+  },
+
+  AssignUnitToTenantRequest: {
+    type: "object",
+    required: ["tenantId"],
+    properties: {
+      tenantId: {
+        type: "string",
+        pattern: "^[0-9a-fA-F]{24}$",
+        example: "6a816455c820f80677ef266d",
+        description: "Tenant profile 24-character ObjectId",
+      },
+    },
+  },
+
 
   // =========================================================================
   // 3. PAYMENT REQUEST DTOs
